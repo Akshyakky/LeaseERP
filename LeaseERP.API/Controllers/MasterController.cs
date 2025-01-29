@@ -157,12 +157,12 @@ namespace LeaseERP.API.Controllers
                         break;
 
                     case OperationType.Delete:
-                        if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for Delete operation");
+                        //if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for Delete operation");
                         if (string.IsNullOrWhiteSpace(request.ActionBy)) errors.Add("ActionBy is required for Delete operation");
                         break;
 
                     case OperationType.FetchById:
-                        if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for FetchById operation");
+                        //if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for FetchById operation");
                         break;
 
                     case OperationType.Search:
