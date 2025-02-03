@@ -19,6 +19,7 @@ namespace LeaseERP.Infrastructure
             });
 
             services.AddScoped<IDataService, DataService>();
+            services.AddSingleton<IEncryptionService, EncryptionService>();
 
             return services;
         }

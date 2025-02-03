@@ -14,6 +14,7 @@ namespace LeaseERP.Core.Services
     {
         private readonly IDbConnection _db;
         private readonly ILogger<DataService> _logger;
+        private readonly IEncryptionService _encryptionService;
 
         private static readonly string[] DateFormats = {
             "yyyy-MM-dd",
@@ -44,17 +45,43 @@ namespace LeaseERP.Core.Services
             { "IsDeleted", DbType.Boolean },
             { "Status", DbType.Int32 },
             { "Code", DbType.String },
+            { "No", DbType.String },
+            { "Number", DbType.String },
+            { "Reference", DbType.String },
+            { "Password", DbType.String },
             { "Description", DbType.String },
             { "XML", DbType.Xml },
             { "JSON", DbType.String },
             { "Timestamp", DbType.DateTime2 }
         };
 
-        public DataService(IDbConnection db, ILogger<DataService> logger)
+        private static readonly HashSet<string> ForceStringParameterSuffixes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "No",
+            "Number",
+            "Code",
+            "Reference",
+            "Password",
+            "Name",
+            "Title",
+            "Description",
+            "Address",
+            "Email",
+            "Phone",
+            "Mobile",
+            "Fax",
+            "URL",
+            "Path",
+            "Note"
+        };
+
+        public DataService(IDbConnection db, ILogger<DataService> logger, IEncryptionService encryptionService)
         {
             _db = db ?? throw new ArgumentNullException(nameof(db));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         }
+
 
         public async Task<ApiResponse<dynamic>> ExecuteStoredProcedureAsync(string procedureName, BaseRequest request)
         {
@@ -68,12 +95,21 @@ namespace LeaseERP.Core.Services
                 {
                     foreach (var param in request.Parameters)
                     {
-                        var (value, dbType) = ConvertParameter(param.Key, param.Value);
-                        parameters.Add($"@{param.Key}", value, dbType);
+                        if (param.Key == "UserPassword")
+                        {
+                            // Encrypt password for both login and user creation/update
+                            var encryptedPassword = _encryptionService.EncryptSensitiveData(param.Value?.ToString() ?? string.Empty);
+                            parameters.Add($"@{param.Key}", encryptedPassword, DbType.String);
+                        }
+                        else
+                        {
+                            var (value, dbType) = ProcessParameter(param.Key, param.Value);
+                            parameters.Add($"@{param.Key}", value, dbType);
+                        }
                     }
                 }
 
-                // Add ActionBy only for operations that require it
+                // Add ActionBy for relevant operations
                 if (request.Mode is OperationType.Insert or OperationType.Update or OperationType.Delete)
                 {
                     parameters.Add("@ActionBy", request.ActionBy ?? "System", DbType.String);
@@ -81,6 +117,12 @@ namespace LeaseERP.Core.Services
 
                 var result = await _db.QueryAsync(procedureName, parameters,
                     commandType: CommandType.StoredProcedure);
+
+                // If this is a retrieval operation, decrypt sensitive data
+                if (request.Mode is OperationType.FetchById or OperationType.Search or OperationType.FetchAll)
+                {
+                    result = DecryptSensitiveData(result);
+                }
 
                 return new ApiResponse<dynamic>
                 {
@@ -99,6 +141,74 @@ namespace LeaseERP.Core.Services
                     Errors = new List<string> { ex.Message }
                 };
             }
+        }
+
+        private (object Value, DbType DbType) ProcessParameter(string parameterName, object value)
+        {
+            if (value == null)
+                return (DBNull.Value, DbType.String);
+
+            // Handle password parameter
+            if (parameterName.EndsWith("Password", StringComparison.OrdinalIgnoreCase))
+            {
+                return (value is JsonElement element ?
+                    _encryptionService.HashPassword(element.GetString() ?? string.Empty) :
+                    _encryptionService.HashPassword(value.ToString() ?? string.Empty),
+                    DbType.String);
+            }
+
+            // Handle sensitive data
+            if (IsSensitiveData(parameterName))
+            {
+                return (value is JsonElement element ?
+                    _encryptionService.EncryptSensitiveData(element.GetString() ?? string.Empty) :
+                    _encryptionService.EncryptSensitiveData(value.ToString() ?? string.Empty),
+                    DbType.String);
+            }
+
+            return ConvertParameter(parameterName, value);
+        }
+
+        private IEnumerable<dynamic> DecryptSensitiveData(IEnumerable<dynamic> data)
+        {
+            var decryptedData = new List<dynamic>();
+            foreach (var item in data)
+            {
+                var itemDictionary = item as IDictionary<string, object>;
+                if (itemDictionary != null)
+                {
+                    var decryptedItem = new Dictionary<string, object>();
+                    foreach (var kvp in itemDictionary)
+                    {
+                        if (kvp.Value != null && IsSensitiveData(kvp.Key))
+                        {
+                            decryptedItem[kvp.Key] = _encryptionService.DecryptSensitiveData(kvp.Value.ToString());
+                        }
+                        else
+                        {
+                            decryptedItem[kvp.Key] = kvp.Value;
+                        }
+                    }
+                    decryptedData.Add(decryptedItem);
+                }
+            }
+            return decryptedData;
+        }
+
+        private bool IsSensitiveData(string parameterName)
+        {
+            var sensitiveFields = new[]
+            {
+                "SSN",
+                "TaxID",
+                "CreditCard",
+                "BankAccount",
+                "IdentificationNumber",
+                "UserPassword"
+            };
+
+            return sensitiveFields.Any(field =>
+                parameterName.EndsWith(field, StringComparison.OrdinalIgnoreCase));
         }
 
         private (object Value, DbType DbType) ConvertParameter(string parameterName, object value)
@@ -134,10 +244,37 @@ namespace LeaseERP.Core.Services
             if (string.IsNullOrWhiteSpace(value))
                 return (DBNull.Value, InferDbTypeFromName(parameterName));
 
+            // First check if this parameter should always be treated as string
+            if (ShouldForceStringType(parameterName))
+            {
+                return (value, DbType.String);
+            }
+
             // Check for Binary/File data
             if (IsBinaryParameter(parameterName) && IsBase64String(value))
             {
                 return (Convert.FromBase64String(value), DbType.Binary);
+            }
+
+            // For explicitly date/time parameters, attempt conversion
+            if (IsDateTimeParameter(parameterName))
+            {
+                if (DateTime.TryParseExact(value, DateFormats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime dateValue))
+                {
+                    return (dateValue, DbType.DateTime2);
+                }
+            }
+
+            // For explicitly time parameters, attempt conversion
+            if (IsTimeParameter(parameterName))
+            {
+                if (TimeSpan.TryParse(value, out TimeSpan timeValue))
+                {
+                    return (timeValue, DbType.Time);
+                }
             }
 
             // Check for GUID
@@ -146,28 +283,33 @@ namespace LeaseERP.Core.Services
                 return (guidValue, DbType.Guid);
             }
 
-            // Check for DateTime
-            if (DateTime.TryParseExact(value, DateFormats,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out DateTime dateValue))
-            {
-                return (dateValue, DbType.DateTime2);
-            }
-
-            // Check for TimeSpan
-            if (TimeSpan.TryParse(value, out TimeSpan timeValue))
-            {
-                return (timeValue, DbType.Time);
-            }
-
             // Check for XML
             if (IsValidXml(value) && parameterName.EndsWith("XML", StringComparison.OrdinalIgnoreCase))
             {
                 return (value, DbType.Xml);
             }
 
+            // Default to string for any other values
             return (value, DbType.String);
+        }
+
+        private bool ShouldForceStringType(string parameterName)
+        {
+            return ForceStringParameterSuffixes.Any(suffix =>
+                parameterName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private bool IsDateTimeParameter(string parameterName)
+        {
+            return parameterName.EndsWith("Date", StringComparison.OrdinalIgnoreCase) ||
+                   parameterName.EndsWith("DateTime", StringComparison.OrdinalIgnoreCase) ||
+                   parameterName.EndsWith("Timestamp", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsTimeParameter(string parameterName)
+        {
+            return parameterName.EndsWith("Time", StringComparison.OrdinalIgnoreCase) &&
+                   !parameterName.EndsWith("DateTime", StringComparison.OrdinalIgnoreCase);
         }
 
         private (object Value, DbType DbType) ConvertNumberValue(string parameterName, JsonElement element)

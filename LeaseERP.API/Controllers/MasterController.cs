@@ -74,8 +74,7 @@ namespace LeaseERP.API.Controllers
 
                 if (!result.Success)
                 {
-                    _logger.LogWarning("Operation failed for entity {Entity}: {Message}",
-                        entity, result.Message);
+                    _logger.LogWarning("Operation failed for entity {Entity}: {Message}", entity, result.Message);
                 }
 
                 return result.Success ? Ok(result) : BadRequest(result);
@@ -98,9 +97,7 @@ namespace LeaseERP.API.Controllers
                     Message = "An internal server error occurred",
                     Errors = new List<string>
                     {
-                        _configuration.GetValue<bool>("AppSettings:ShowDetailedErrors")
-                            ? ex.Message
-                            : "Please contact support if the problem persists"
+                        _configuration.GetValue<bool>("AppSettings:ShowDetailedErrors")? ex.Message: "Please contact support if the problem persists"
                     }
                 });
             }
@@ -157,20 +154,22 @@ namespace LeaseERP.API.Controllers
                         break;
 
                     case OperationType.Delete:
-                        //if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for Delete operation");
                         if (string.IsNullOrWhiteSpace(request.ActionBy)) errors.Add("ActionBy is required for Delete operation");
                         break;
 
                     case OperationType.FetchById:
-                        //if (!request.Parameters.ContainsKey("UserID")) errors.Add("UserID is required for FetchById operation");
                         break;
 
                     case OperationType.Search:
-                        // Search can have empty parameters for fetching all records
                         break;
 
                     case OperationType.FetchAll:
-                        // FetchAll doesn't require parameters
+                        break;
+                    case OperationType.Login:
+                        if (!request.Parameters.ContainsKey("UserName"))
+                            errors.Add("UserName is required for login");
+                        if (!request.Parameters.ContainsKey("UserPassword"))
+                            errors.Add("UserPassword is required for login");
                         break;
                 }
             }
