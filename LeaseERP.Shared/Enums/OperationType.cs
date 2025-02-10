@@ -8,6 +8,7 @@
         FetchAll = 3,
         FetchById = 4,
         Delete = 5,
-        Search = 6
+        Search = 6,
+        Login = 7
     }
 }
