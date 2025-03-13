@@ -1,192 +1,240 @@
 ﻿using LeaseERP.Core.Interfaces;
 using LeaseERP.Shared.DTOs;
-using LeaseERP.Shared.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.ComponentModel.DataAnnotations;
+using System.Data;
 
 namespace LeaseERP.API.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
-    [Produces("application/json")]
+    [ApiController]
+    [Authorize]
     public class MasterController : ControllerBase
     {
         private readonly IDataService _dataService;
-        private readonly ILogger<MasterController> _logger;
-        private readonly IReadOnlyDictionary<string, string> _procedureMap;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<MasterController> _logger;
+        private readonly IEncryptionService _encryptionService;
 
-        public MasterController(IDataService dataService, ILogger<MasterController> logger, IConfiguration configuration)
+        public MasterController(
+            IDataService dataService,
+            IConfiguration configuration,
+            ILogger<MasterController> logger,
+            IEncryptionService encryptionService)
         {
-            _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            _procedureMap = LoadProcedureMap();
+            _dataService = dataService;
+            _configuration = configuration;
+            _logger = logger;
+            _encryptionService = encryptionService;
         }
 
-        /// <summary>
-        /// Executes a stored procedure operation for the specified entity.
-        /// </summary>
-        /// <param name="entity">The entity type to perform the operation on</param>
-        /// <param name="request">The operation request details</param>
-        /// <returns>Operation result</returns>
-        /// <response code="200">Operation completed successfully</response>
-        /// <response code="400">Invalid request or validation error</response>
-        /// <response code="404">Entity not found</response>
-        /// <response code="500">Internal server error</response>
-        [HttpPost("{entity}")]
-        [ProducesResponseType(typeof(ApiResponse<dynamic>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse<dynamic>), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ApiResponse<dynamic>), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(ApiResponse<dynamic>), StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> ExecuteOperation([Required][RegularExpression("^[a-zA-Z0-9]+$")] string entity, [FromBody] BaseRequest request)
+        [HttpPost("{entityType}")]
+        public async Task<IActionResult> ExecuteOperation(string entityType, [FromBody] BaseRequest request)
         {
             try
             {
-                _logger.LogInformation("Executing operation for entity: {Entity}", entity);
+                // Check if the entity type is supported in configuration
+                string configKey = $"StoredProcedures:{entityType.ToLower()}";
+                string spName = _configuration[configKey];
 
-                if (request == null)
+                if (string.IsNullOrEmpty(spName))
                 {
-                    return BadRequest(new ApiResponse<dynamic>
-                    {
-                        Success = false,
-                        Message = "Request body cannot be null"
-                    });
+                    return BadRequest(new { Success = false, Message = $"Entity type '{entityType}' is not supported." });
                 }
 
-                var validationResult = ValidateRequest(request);
-                if (!validationResult.Success)
-                {
-                    return BadRequest(validationResult);
-                }
-
-                if (!_procedureMap.TryGetValue(entity.ToLower(), out string procedureName))
-                {
-                    _logger.LogWarning("Unknown entity requested: {Entity}", entity);
-                    return NotFound(new ApiResponse<dynamic>
-                    {
-                        Success = false,
-                        Message = $"Entity '{entity}' not found"
-                    });
-                }
-
-                var result = await _dataService.ExecuteStoredProcedureAsync(procedureName, request);
-
-                if (!result.Success)
-                {
-                    _logger.LogWarning("Operation failed for entity {Entity}: {Message}", entity, result.Message);
-                }
-
-                return result.Success ? Ok(result) : BadRequest(result);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("Request cancelled for entity: {Entity}", entity);
-                return StatusCode(StatusCodes.Status408RequestTimeout, new ApiResponse<dynamic>
-                {
-                    Success = false,
-                    Message = "The request was cancelled"
-                });
+                _logger.LogInformation("Executing {EntityType} operation with mode {Mode}", entityType, request.Mode);
+                return await ExecuteStoredProcedure(spName, request);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing request for entity {Entity}", entity);
-                return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponse<dynamic>
+                _logger.LogError(ex, "Error in {EntityType} operations with mode {Mode}", entityType, request.Mode);
+                return StatusCode(500, new { Success = false, Message = "An error occurred while processing your request." });
+            }
+        }
+
+        #region Helper Methods
+
+        private async Task<IActionResult> ExecuteStoredProcedure(string spName, BaseRequest request)
+        {
+            if (string.IsNullOrEmpty(spName))
+            {
+                return BadRequest(new { Success = false, Message = "Stored procedure not configured." });
+            }
+
+            // Convert the mode enum to int
+            var parameters = new Dictionary<string, object>
+            {
+                { "@Mode", (int)request.Mode }
+            };
+
+            // Add user tracking parameters
+            if (!string.IsNullOrEmpty(request.ActionBy))
+            {
+                parameters.Add("@CurrentUserName", request.ActionBy);
+
+                // Try to get UserID from claims
+                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (userIdClaim != null && long.TryParse(userIdClaim.Value, out long userId))
                 {
-                    Success = false,
-                    Message = "An internal server error occurred",
-                    Errors = new List<string>
+                    parameters.Add("@CurrentUserID", userId);
+                }
+            }
+
+            // Add all other parameters from the dictionary
+            if (request.Parameters != null)
+            {
+                foreach (var param in request.Parameters)
+                {
+                    // Skip parameters that are already added
+                    if (!parameters.ContainsKey($"@{param.Key}"))
                     {
-                        _configuration.GetValue<bool>("AppSettings:ShowDetailedErrors")? ex.Message: "Please contact support if the problem persists"
+                        // Convert JsonElement to appropriate .NET type
+                        var convertedValue = ConvertJsonElementToNativeType(param.Value);
+
+                        // Encrypt UserPassword parameter
+                        if (param.Key.Equals("UserPassword", StringComparison.OrdinalIgnoreCase) &&
+                            convertedValue != null &&
+                            convertedValue != DBNull.Value)
+                        {
+                            // Encrypt the password
+                            string passwordStr = convertedValue.ToString();
+                            if (!string.IsNullOrEmpty(passwordStr))
+                            {
+                                convertedValue = _encryptionService.Encrypt(passwordStr);
+                                _logger.LogInformation("Password encrypted for parameter UserPassword");
+                            }
+                        }
+
+                        parameters.Add($"@{param.Key}", convertedValue);
                     }
-                });
-            }
-        }
-
-        private IReadOnlyDictionary<string, string> LoadProcedureMap()
-        {
-            try
-            {
-                var procedureMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                _configuration.GetSection("StoredProcedures").Bind(procedureMap);
-
-                if (procedureMap.Count == 0)
-                {
-                    _logger.LogWarning("No stored procedure mappings found in configuration");
-                    throw new InvalidOperationException("Stored procedure mappings not configured");
                 }
+            }
 
-                return procedureMap;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading procedure mappings");
-                throw new InvalidOperationException("Failed to load stored procedure mappings", ex);
-            }
+            var result = await _dataService.ExecuteStoredProcedureAsync(spName, parameters);
+            return ProcessDataSet(result);
         }
 
-        private ApiResponse<dynamic> ValidateRequest(BaseRequest request)
+        private object ConvertJsonElementToNativeType(object value)
         {
-            var errors = new List<string>();
-
-            if (request.Mode == OperationType.None)
+            if (value is System.Text.Json.JsonElement element)
             {
-                errors.Add("Invalid operation type");
+                switch (element.ValueKind)
+                {
+                    case System.Text.Json.JsonValueKind.String:
+                        return element.GetString();
+                    case System.Text.Json.JsonValueKind.Number:
+                        // Try to parse as integer first, then as double
+                        if (element.TryGetInt64(out long longValue))
+                            return longValue;
+                        if (element.TryGetInt32(out int intValue))
+                            return intValue;
+                        if (element.TryGetDouble(out double doubleValue))
+                            return doubleValue;
+                        return element.GetRawText();
+                    case System.Text.Json.JsonValueKind.True:
+                        return true;
+                    case System.Text.Json.JsonValueKind.False:
+                        return false;
+                    case System.Text.Json.JsonValueKind.Null:
+                        return DBNull.Value;
+                    case System.Text.Json.JsonValueKind.Array:
+                    case System.Text.Json.JsonValueKind.Object:
+                        // For complex types, convert to string
+                        return element.GetRawText();
+                    default:
+                        return null;
+                }
+            }
+            return value ?? DBNull.Value;
+        }
+
+        private IActionResult ProcessDataSet(DataSet ds)
+        {
+            if (ds == null || ds.Tables.Count == 0)
+            {
+                return BadRequest(new { Success = false, Message = "No results returned." });
             }
 
-            // Parameters validation based on Mode
-            if (request.Parameters == null)
+            // Check for status message in the last table
+            DataTable statusTable = ds.Tables[ds.Tables.Count - 1];
+            bool success = false;
+            string message = "Operation completed";
+
+            if (statusTable.Columns.Contains("Status") && statusTable.Columns.Contains("Message") &&
+                statusTable.Rows.Count > 0)
             {
-                errors.Add("Parameters cannot be null");
+                success = Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1;
+                message = statusTable.Rows[0]["Message"].ToString();
+
+                // If there's only one table and it's the status table
+                if (ds.Tables.Count == 1)
+                {
+                    return Ok(new { Success = success, Message = message });
+                }
+            }
+
+            // Process data tables
+            var result = new Dictionary<string, object>();
+
+            // Add success and message
+            result["success"] = success;
+            result["message"] = message;
+
+            // Process data tables (excluding the last one if it's a status table)
+            int tablesToProcess = statusTable.Columns.Contains("Status") ? ds.Tables.Count - 1 : ds.Tables.Count;
+
+            if (tablesToProcess == 1)
+            {
+                // Single data table, return as "data"
+                result["data"] = DataTableToList(ds.Tables[0]);
             }
             else
             {
-                switch (request.Mode)
+                // Multiple data tables
+                for (int i = 0; i < tablesToProcess; i++)
                 {
-                    case OperationType.Insert:
-                        if (!request.Parameters.Any()) errors.Add("Parameters are required for Insert operation");
-                        if (string.IsNullOrWhiteSpace(request.ActionBy)) errors.Add("ActionBy is required for Insert operation");
-                        break;
-
-                    case OperationType.Update:
-                        if (!request.Parameters.Any()) errors.Add("Parameters are required for Update operation");
-                        if (string.IsNullOrWhiteSpace(request.ActionBy)) errors.Add("ActionBy is required for Update operation");
-                        break;
-
-                    case OperationType.Delete:
-                        if (string.IsNullOrWhiteSpace(request.ActionBy)) errors.Add("ActionBy is required for Delete operation");
-                        break;
-
-                    case OperationType.FetchById:
-                        break;
-
-                    case OperationType.Search:
-                        break;
-
-                    case OperationType.FetchAll:
-                        break;
-                    case OperationType.Login:
-                        if (!request.Parameters.ContainsKey("UserName"))
-                            errors.Add("UserName is required for login");
-                        if (!request.Parameters.ContainsKey("UserPassword"))
-                            errors.Add("UserPassword is required for login");
-                        break;
+                    result[$"table{i + 1}"] = DataTableToList(ds.Tables[i]);
                 }
             }
 
-            if (request.Parameters?.Any() == true && !request.Parameters.All(p => !string.IsNullOrWhiteSpace(p.Key)))
+            // Check for additional data in status table
+            if (statusTable.Columns.Count > 2 && statusTable.Rows.Count > 0)
             {
-                errors.Add("Parameter keys cannot be null or empty");
+                var row = statusTable.Rows[0];
+                for (int i = 0; i < statusTable.Columns.Count; i++)
+                {
+                    var columnName = statusTable.Columns[i].ColumnName;
+                    if (columnName != "Status" && columnName != "Message")
+                    {
+                        result[char.ToLowerInvariant(columnName[0]) + columnName.Substring(1)] = row[i];
+                    }
+                }
             }
 
-            return errors.Any()
-                ? new ApiResponse<dynamic>
-                {
-                    Success = false,
-                    Message = "Validation failed",
-                    Errors = errors
-                }
-                : new ApiResponse<dynamic> { Success = true };
+            return Ok(result);
         }
+
+        private List<Dictionary<string, object>> DataTableToList(DataTable dt)
+        {
+            var list = new List<Dictionary<string, object>>();
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var dict = new Dictionary<string, object>();
+
+                foreach (DataColumn col in dt.Columns)
+                {
+                    // Convert DBNull to null
+                    var value = row[col];
+                    dict[col.ColumnName] = value == DBNull.Value ? null : value;
+                }
+
+                list.Add(dict);
+            }
+
+            return list;
+        }
+
+        #endregion
     }
 }

@@ -2,9 +2,7 @@
 {
     public interface IEncryptionService
     {
-        string HashPassword(string password);
-        bool VerifyPassword(string password, string hashedPassword);
-        string EncryptSensitiveData(string plainText);
-        string DecryptSensitiveData(string cipherText);
+        string Encrypt(string plainText);
+        string Decrypt(string cipherText);
     }
 }
