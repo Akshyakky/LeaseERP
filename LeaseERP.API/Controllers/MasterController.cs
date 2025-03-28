@@ -89,7 +89,7 @@ namespace LeaseERP.API.Controllers
                     if (!parameters.ContainsKey($"@{param.Key}"))
                     {
                         // Convert JsonElement to appropriate .NET type
-                        var convertedValue = ConvertJsonElementToNativeType(param.Value);
+                        var convertedValue = ConvertJsonElementToNativeType(param.Value, param.Key);
 
                         // Encrypt UserPassword parameter
                         if (param.Key.Equals("UserPassword", StringComparison.OrdinalIgnoreCase) &&
@@ -114,10 +114,31 @@ namespace LeaseERP.API.Controllers
             return ProcessDataSet(result);
         }
 
-        private object ConvertJsonElementToNativeType(object value)
+        private object ConvertJsonElementToNativeType(object value, string paramKey = null)
         {
             if (value is System.Text.Json.JsonElement element)
             {
+                // Special handling for FileContent parameter
+                if (paramKey != null && paramKey.Equals("FileContent", StringComparison.OrdinalIgnoreCase) &&
+                    element.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    string base64String = element.GetString();
+                    if (!string.IsNullOrEmpty(base64String))
+                    {
+                        try
+                        {
+                            // Convert Base64 string to byte array
+                            return Convert.FromBase64String(base64String);
+                        }
+                        catch (FormatException)
+                        {
+                            _logger.LogWarning("Invalid Base64 string format for FileContent parameter");
+                            return DBNull.Value;
+                        }
+                    }
+                    return DBNull.Value;
+                }
+
                 switch (element.ValueKind)
                 {
                     case System.Text.Json.JsonValueKind.String:
