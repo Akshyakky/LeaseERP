@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace LeaseERP.Core.Services
@@ -78,6 +79,9 @@ namespace LeaseERP.Core.Services
                         // Generate JWT token
                         string token = GenerateJwtToken(user);
 
+                        // Generate refresh token
+                        string refreshToken = GenerateRefreshToken(user);
+
                         // Calculate expiration
                         int expiryHours = int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8");
                         DateTime expiration = DateTime.UtcNow.AddHours(expiryHours);
@@ -87,6 +91,7 @@ namespace LeaseERP.Core.Services
                             Success = true,
                             Message = "Login successful",
                             Token = token,
+                            RefreshToken = refreshToken,
                             Expiration = expiration,
                             User = user
                         };
@@ -134,7 +139,7 @@ namespace LeaseERP.Core.Services
                 ClaimsPrincipal principal;
                 try
                 {
-                    principal = tokenHandler.ValidateToken(request.Token, tokenValidationParameters, out var validatedToken);
+                    principal = tokenHandler.ValidateToken(request.refreshToken, tokenValidationParameters, out var validatedToken);
 
                     // Additional validation
                     if (validatedToken is not JwtSecurityToken jwtToken ||
@@ -216,6 +221,9 @@ namespace LeaseERP.Core.Services
                         // Generate new JWT token
                         string token = GenerateJwtToken(user);
 
+                        // Generate new refresh token
+                        string refreshToken = GenerateRefreshToken(user);
+
                         // Calculate expiration
                         int expiryHours = int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8");
                         DateTime expiration = DateTime.UtcNow.AddHours(expiryHours);
@@ -225,6 +233,7 @@ namespace LeaseERP.Core.Services
                             Success = true,
                             Message = "Token refreshed successfully",
                             Token = token,
+                            RefreshToken = refreshToken,
                             Expiration = expiration,
                             User = user
                         };
@@ -300,16 +309,6 @@ namespace LeaseERP.Core.Services
         {
             try
             {
-                // This is a simplified implementation
-                // In a real-world scenario, you would:
-                // 1. Verify the user exists by username/email
-                // 2. Generate a random temporary password
-                // 3. Send that password to the user's email
-                // 4. Update the user's password in the database
-
-                // For this example, we'll just return true to simulate success
-                // A real implementation would be more complex
-
                 // Find user by username or email
                 var findParameters = new Dictionary<string, object>
                 {
@@ -370,6 +369,41 @@ namespace LeaseERP.Core.Services
             {
                 Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddHours(int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8")),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
+                Issuer = _configuration["JwtSettings:Issuer"],
+                Audience = _configuration["JwtSettings:Audience"]
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
+
+        /// <summary>
+        /// Generates a JWT-formatted refresh token
+        /// </summary>
+        /// <param name="user">The user for whom to generate the refresh token</param>
+        /// <returns>JWT-formatted refresh token string</returns>
+        private string GenerateRefreshToken(UserDTO user)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_configuration["JwtSettings:Secret"]);
+
+            // Create limited claims for the refresh token - only include essential information
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()), // Unique token ID
+                new Claim("tokenType", "refresh") // Mark this as a refresh token
+            };
+
+            // Set longer expiration for refresh token
+            // Typically refresh tokens live longer than access tokens
+            var refreshTokenExpiry = int.Parse(_configuration["JwtSettings:RefreshExpiryHours"] ?? "168"); // Default 7 days
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(claims),
+                Expires = DateTime.UtcNow.AddHours(refreshTokenExpiry),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature),
                 Issuer = _configuration["JwtSettings:Issuer"],
                 Audience = _configuration["JwtSettings:Audience"]
