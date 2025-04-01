@@ -47,8 +47,8 @@ namespace LeaseERP.Core.Services
                 var result = await _dataService.ExecuteStoredProcedureAsync(_spUser, parameters);
 
                 // Check for successful login
-                var statusTable = result.Tables[0];
-                if (statusTable.Rows.Count > 0)//&& Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1
+                var statusTable = result.Tables.Count > 1 ? result.Tables[1] : result.Tables[0];
+                if (statusTable.Rows.Count > 0 && Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1)
                 {
                     // User data should be in the first table
                     var userTable = result.Tables[0];
