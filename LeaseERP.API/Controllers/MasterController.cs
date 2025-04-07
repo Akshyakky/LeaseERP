@@ -190,7 +190,26 @@ namespace LeaseERP.API.Controllers
                 // If there's only one table and it's the status table
                 if (ds.Tables.Count == 1)
                 {
-                    return Ok(new { Success = success, Message = message });
+                    // Create a dynamic object to hold the response
+                    var response = new Dictionary<string, object>
+                    {
+                        { "success", success },
+                        { "message", message }
+                    };
+
+                    // Add any additional columns from the status table
+                    for (int i = 0; i < statusTable.Columns.Count; i++)
+                    {
+                        var columnName = statusTable.Columns[i].ColumnName;
+                        if (columnName != "Status" && columnName != "Message")
+                        {
+                            var value = statusTable.Rows[0][columnName];
+                            // Keep original column name without changing case
+                            response[columnName] = value == DBNull.Value ? null : value;
+                        }
+                    }
+
+                    return Ok(response);
                 }
             }
 
