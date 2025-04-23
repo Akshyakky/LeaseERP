@@ -79,14 +79,20 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 builder.Services.AddInfrastructure(builder.Configuration);
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+// Remove the environment check to enable Swagger in all environments
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "LeaseERP API v1");
+    // Optionally, set the Swagger UI as the app's root page
+    // c.RoutePrefix = string.Empty;
+});
+
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
     app.UseDeveloperExceptionPage();
 }
 else
