@@ -197,7 +197,9 @@ namespace LeaseERP.Core.Services
         private async Task<CompanyInfo> GetCompanyInfoAsync()
         {
             // This would typically fetch company data from the database
-            // For now, return a default company info
+            // For now, return a default company info with logo path from configuration
+            var logoPath = _configuration["PdfSettings:CompanyLogo"];
+
             return new CompanyInfo
             {
                 CompanyID = 1,
@@ -207,8 +209,44 @@ namespace LeaseERP.Core.Services
                 CompanyEmail = "info@leaseerp.com",
                 CompanyWebsite = "www.leaseerp.com",
                 TaxRegNo = "TAX123456789",
-                CommercialRegNo = "CR123456789"
+                CommercialRegNo = "CR123456789",
+                CompanyLogo = logoPath ?? ""
             };
+        }
+
+        private string GetAbsoluteLogoPath()
+        {
+            var logoPath = _configuration["PdfSettings:CompanyLogo"];
+            if (string.IsNullOrEmpty(logoPath))
+                return string.Empty;
+
+            // Handle tilde path resolution
+            if (logoPath.StartsWith("~"))
+            {
+                // Get the content root path
+                var contentRoot = Directory.GetCurrentDirectory();
+                logoPath = logoPath.Replace("~", contentRoot);
+            }
+
+            // Normalize path separators for current OS
+            logoPath = logoPath.Replace("\\", Path.DirectorySeparatorChar.ToString());
+            logoPath = logoPath.Replace("/", Path.DirectorySeparatorChar.ToString());
+
+            return logoPath;
+        }
+
+        private bool LogoFileExists()
+        {
+            var logoPath = GetAbsoluteLogoPath();
+            if (string.IsNullOrEmpty(logoPath))
+                return false;
+
+            var exists = File.Exists(logoPath);
+            if (!exists)
+            {
+                _logger.LogWarning("Company logo file not found at path: {LogoPath}", logoPath);
+            }
+            return exists;
         }
 
         private IDocument CreateContractSlipDocument(ContractSlipData data)
@@ -223,9 +261,9 @@ namespace LeaseERP.Core.Services
                     page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
                     page.Header()
-                        .Height(100)
+                        .Height(120)
                         .Background(Colors.Grey.Lighten3)
-                        .Padding(20)
+                        .Padding(15)
                         .Row(row =>
                         {
                             row.RelativeItem().Column(column =>
@@ -241,7 +279,47 @@ namespace LeaseERP.Core.Services
                                     column.Item().Text($"Tax Reg No: {data.Company.TaxRegNo}").FontSize(9);
                             });
 
-                            row.ConstantItem(100).Height(50).Placeholder();
+                            // Company Logo Section
+                            row.ConstantItem(90).AlignCenter().AlignMiddle().Container().Row(logoRow =>
+                            {
+                                if (LogoFileExists())
+                                {
+                                    try
+                                    {
+                                        var logoPath = GetAbsoluteLogoPath();
+                                        logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                            .MaxHeight(70)
+                                            .MaxWidth(85)
+                                            .Image(logoPath)
+                                            .FitArea();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Failed to load company logo from path: {LogoPath}", GetAbsoluteLogoPath());
+                                        // Fallback to text placeholder
+                                        logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                            .Border(1)
+                                            .BorderColor(Colors.Grey.Medium)
+                                            .Background(Colors.Grey.Lighten4)
+                                            .Padding(8)
+                                            .Text("LOGO")
+                                            .FontSize(10)
+                                            .FontColor(Colors.Grey.Darken1);
+                                    }
+                                }
+                                else
+                                {
+                                    // Placeholder when logo file doesn't exist
+                                    logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                        .Border(1)
+                                        .BorderColor(Colors.Grey.Medium)
+                                        .Background(Colors.Grey.Lighten4)
+                                        .Padding(8)
+                                        .Text("LOGO")
+                                        .FontSize(10)
+                                        .FontColor(Colors.Grey.Darken1);
+                                }
+                            });
                         });
 
                     page.Content()
