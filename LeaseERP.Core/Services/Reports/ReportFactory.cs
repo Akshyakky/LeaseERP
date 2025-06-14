@@ -1,6 +1,7 @@
 ﻿// LeaseERP.Core/Services/Reports/ReportFactory.cs
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services.Reports.Contracts;
+using LeaseERP.Core.Services.Reports.Invoices;
 using LeaseERP.Core.Services.Reports.Termination;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,9 @@ namespace LeaseERP.Core.Services.Reports
         {
             "contract-slip",
             "contract-list",
-            "termination-slip"
+            "termination-slip",
+            "invoice-slip",
+            "invoice-list"
             // Add more as needed
         };
 
@@ -57,6 +60,8 @@ namespace LeaseERP.Core.Services.Reports
                         "contract-slip" => _serviceProvider.GetRequiredService<ContractSlipTemplate>(),
                         "contract-list" => _serviceProvider.GetRequiredService<ContractListTemplate>(),
                         "termination-slip" => _serviceProvider.GetRequiredService<TerminationSlipTemplate>(),
+                        "invoice-slip" => _serviceProvider.GetRequiredService<InvoiceSlipTemplate>(),
+                        "invoice-list" => _serviceProvider.GetRequiredService<InvoiceListTemplate>(),
                         _ => null
                     };
                 }
@@ -111,6 +116,7 @@ namespace LeaseERP.Core.Services.Reports
                 "contract-list",
                 "termination-slip",
                 "invoice-slip",
+                "invoice-list",
                 "receipt-slip",
                 "customer-list",
                 "property-list",

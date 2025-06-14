@@ -5,6 +5,7 @@ using LeaseERP.Core.Services;
 using LeaseERP.Core.Services.Reports;
 using LeaseERP.Core.Services.Reports.Components;
 using LeaseERP.Core.Services.Reports.Contracts;
+using LeaseERP.Core.Services.Reports.Invoices;
 using LeaseERP.Core.Services.Reports.Termination;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -49,6 +50,8 @@ namespace LeaseERP.Infrastructure
             services.AddScoped<ContractSlipTemplate>();
             services.AddScoped<ContractListTemplate>();
             services.AddScoped<TerminationSlipTemplate>();
+            services.AddScoped<InvoiceSlipTemplate>();
+            services.AddScoped<InvoiceListTemplate>();
 
             // Add more custom templates only when needed:
             // services.AddScoped<ComplexFinancialDashboardTemplate>();
