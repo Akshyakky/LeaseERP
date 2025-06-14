@@ -1,6 +1,7 @@
 ﻿// LeaseERP.Core/Services/Reports/ReportFactory.cs
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services.Reports.Contracts;
+using LeaseERP.Core.Services.Reports.Termination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +24,7 @@ namespace LeaseERP.Core.Services.Reports
             {
                 "contract-slip" => _serviceProvider.GetRequiredService<ContractSlipTemplate>(),
                 "contract-list" => _serviceProvider.GetRequiredService<ContractListTemplate>(),
+                "termination-slip" => _serviceProvider.GetRequiredService<TerminationSlipTemplate>(),
                 // Add more report types as needed
                 _ => null
             };
@@ -34,6 +36,7 @@ namespace LeaseERP.Core.Services.Reports
             {
                 "contract-slip" => _serviceProvider.GetRequiredService<ContractSlipDataProvider>(),
                 "contract-list" => _serviceProvider.GetRequiredService<ContractListDataProvider>(),
+                "termination-slip" => _serviceProvider.GetRequiredService<TerminationSlipDataProvider>(),
                 // Add more data providers as needed
                 _ => null
             };
