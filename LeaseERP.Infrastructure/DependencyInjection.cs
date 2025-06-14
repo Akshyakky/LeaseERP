@@ -3,6 +3,7 @@ using LeaseERP.Core.Interfaces;
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services;
 using LeaseERP.Core.Services.Reports;
+using LeaseERP.Core.Services.Reports.Components;
 using LeaseERP.Core.Services.Reports.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -56,6 +57,8 @@ namespace LeaseERP.Infrastructure
             // Report components (headers, footers, etc.)
             services.AddScoped<IReportComponent, StandardHeaderComponent>();
             services.AddScoped<IReportComponent, StandardFooterComponent>();
+            services.AddScoped<StandardHeaderComponent>();
+            services.AddScoped<StandardFooterComponent>();
 
             return services;
         }
