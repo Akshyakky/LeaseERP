@@ -1,4 +1,6 @@
-﻿namespace LeaseERP.Core.Interfaces
+﻿using LeaseERP.Shared.DTOs;
+
+namespace LeaseERP.Core.Interfaces
 {
     public interface IPdfService
     {
@@ -6,5 +8,6 @@
         Task<byte[]> GenerateInvoiceAsync(long invoiceId, string actionBy);
         Task<byte[]> GenerateReceiptAsync(long receiptId, string actionBy);
         Task<byte[]> GenerateCustomReportAsync(string reportType, Dictionary<string, object> parameters);
+        Task<byte[]> GenerateContractListAsync(ContractListRequest request, string actionBy);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using LeaseERP.Core.Interfaces;
+using LeaseERP.Shared.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -110,6 +111,57 @@ namespace LeaseERP.API.Controllers
             {
                 _logger.LogError(ex, "Error generating batch contract slips");
                 return StatusCode(500, new { Success = false, Message = "Error generating batch PDFs. Please try again." });
+            }
+        }
+
+        [HttpPost("contract-list")]
+        public async Task<IActionResult> GenerateContractList([FromBody] ContractListRequest request)
+        {
+            try
+            {
+                var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "System";
+                _logger.LogInformation("Generating contract list PDF by user: {UserName}", userName);
+
+                if (request == null)
+                {
+                    request = new ContractListRequest();
+                }
+
+                var pdfBytes = await _pdfService.GenerateContractListAsync(request, userName);
+
+                var fileName = $"ContractList_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+
+                return File(pdfBytes, "application/pdf", fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating contract list PDF");
+                return StatusCode(500, new { Success = false, Message = "Error generating PDF. Please try again." });
+            }
+        }
+
+        [HttpPost("contract-list/preview")]
+        public async Task<IActionResult> PreviewContractList([FromBody] ContractListRequest request)
+        {
+            try
+            {
+                var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "System";
+                _logger.LogInformation("Generating contract list PDF preview by user: {UserName}", userName);
+
+                if (request == null)
+                {
+                    request = new ContractListRequest();
+                }
+
+                var pdfBytes = await _pdfService.GenerateContractListAsync(request, userName);
+
+                // Return PDF for inline viewing in browser
+                return File(pdfBytes, "application/pdf");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating contract list PDF preview");
+                return StatusCode(500, new { Success = false, Message = "Error generating PDF preview. Please try again." });
             }
         }
 

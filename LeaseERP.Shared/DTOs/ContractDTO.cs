@@ -96,4 +96,76 @@
         public string TaxRegNo { get; set; } = string.Empty;
         public string CommercialRegNo { get; set; } = string.Empty;
     }
+
+    public class ContractListRequest
+    {
+        public string? SearchText { get; set; }
+        public long? FilterCustomerID { get; set; }
+        public string? FilterContractStatus { get; set; }
+        public DateTime? FilterFromDate { get; set; }
+        public DateTime? FilterToDate { get; set; }
+        public long? FilterUnitID { get; set; }
+        public long? FilterPropertyID { get; set; }
+        public string ReportTitle { get; set; } = "Contract List Report";
+        public bool IncludeUnitCount { get; set; } = true;
+        public bool IncludeChargeCount { get; set; } = true;
+        public bool IncludeAttachmentCount { get; set; } = true;
+    }
+
+    public class ContractListData
+    {
+        public List<ContractSummaryInfo> Contracts { get; set; } = new();
+        public ContractListSummary Summary { get; set; } = new();
+        public CompanyInfo Company { get; set; } = new();
+        public string ReportTitle { get; set; } = "Contract List Report";
+        public DateTime GeneratedOn { get; set; } = DateTime.Now;
+        public string GeneratedBy { get; set; } = string.Empty;
+        public ContractListFilters AppliedFilters { get; set; } = new();
+    }
+
+    public class ContractSummaryInfo
+    {
+        public long ContractID { get; set; }
+        public string ContractNo { get; set; } = string.Empty;
+        public string ContractStatus { get; set; } = string.Empty;
+        public long CustomerID { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public long? JointCustomerID { get; set; }
+        public string JointCustomerName { get; set; } = string.Empty;
+        public DateTime TransactionDate { get; set; }
+        public decimal TotalAmount { get; set; }
+        public decimal AdditionalCharges { get; set; }
+        public decimal GrandTotal { get; set; }
+        public string Remarks { get; set; } = string.Empty;
+        public int UnitCount { get; set; }
+        public int ChargeCount { get; set; }
+        public int AttachmentCount { get; set; }
+        public string CreatedBy { get; set; } = string.Empty;
+        public DateTime CreatedOn { get; set; }
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime? UpdatedOn { get; set; }
+    }
+
+    public class ContractListSummary
+    {
+        public int TotalContracts { get; set; }
+        public decimal TotalContractValue { get; set; }
+        public decimal TotalAdditionalCharges { get; set; }
+        public decimal GrandTotalValue { get; set; }
+        public Dictionary<string, int> StatusBreakdown { get; set; } = new();
+        public int TotalUnits { get; set; }
+        public int TotalCharges { get; set; }
+        public int TotalAttachments { get; set; }
+    }
+
+    public class ContractListFilters
+    {
+        public string? SearchText { get; set; }
+        public string? CustomerName { get; set; }
+        public string? ContractStatus { get; set; }
+        public DateTime? FromDate { get; set; }
+        public DateTime? ToDate { get; set; }
+        public string? UnitNo { get; set; }
+        public string? PropertyName { get; set; }
+    }
 }

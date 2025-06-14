@@ -54,6 +54,31 @@ namespace LeaseERP.Core.Services
             }
         }
 
+        public async Task<byte[]> GenerateContractListAsync(ContractListRequest request, string actionBy)
+        {
+            try
+            {
+                _logger.LogInformation("Generating contract list PDF by user: {ActionBy}", actionBy);
+
+                // Fetch contract list data
+                var contractListData = await GetContractListDataAsync(request, actionBy);
+
+                if (contractListData?.Contracts == null && contractListData?.Contracts.Count == 0)
+                {
+                    throw new Exception("Contract list data not found");
+                }
+
+                // Generate PDF
+                var document = CreateContractListDocument(contractListData);
+                return document.GeneratePdf();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating contract list PDF");
+                throw;
+            }
+        }
+
         public async Task<byte[]> GenerateInvoiceAsync(long invoiceId, string actionBy)
         {
             // Implementation for invoice PDF generation
@@ -70,6 +95,366 @@ namespace LeaseERP.Core.Services
         {
             // Implementation for custom reports
             throw new NotImplementedException("Custom report generation will be implemented based on requirements");
+        }
+
+        private async Task<ContractListData> GetContractListDataAsync(ContractListRequest request, string actionBy)
+        {
+            var spName = _configuration["StoredProcedures:contractmanagement"];
+            if (string.IsNullOrEmpty(spName))
+            {
+                throw new Exception("Contract management stored procedure not configured");
+            }
+
+            // Use search mode if any filters are applied, otherwise fetch all
+            var mode = HasFilters(request) ? (int)OperationType.Search : (int)OperationType.FetchAll;
+
+            var parameters = new Dictionary<string, object>
+            {
+                { "@Mode", mode },
+                { "@CurrentUserName", actionBy }
+            };
+
+            // Add filter parameters if they exist
+            if (!string.IsNullOrEmpty(request.SearchText))
+                parameters.Add("@SearchText", request.SearchText);
+
+            if (request.FilterCustomerID.HasValue)
+                parameters.Add("@FilterCustomerID", request.FilterCustomerID.Value);
+
+            if (!string.IsNullOrEmpty(request.FilterContractStatus))
+                parameters.Add("@FilterContractStatus", request.FilterContractStatus);
+
+            if (request.FilterFromDate.HasValue)
+                parameters.Add("@FilterFromDate", request.FilterFromDate.Value);
+
+            if (request.FilterToDate.HasValue)
+                parameters.Add("@FilterToDate", request.FilterToDate.Value);
+
+            if (request.FilterUnitID.HasValue)
+                parameters.Add("@FilterUnitID", request.FilterUnitID.Value);
+
+            if (request.FilterPropertyID.HasValue)
+                parameters.Add("@FilterPropertyID", request.FilterPropertyID.Value);
+
+            var result = await _dataService.ExecuteStoredProcedureAsync(spName, parameters);
+
+            if (result?.Tables?.Count < 1)
+            {
+                throw new Exception("Invalid data structure returned from stored procedure");
+            }
+
+            var contractListData = new ContractListData
+            {
+                ReportTitle = request.ReportTitle,
+                GeneratedBy = actionBy,
+                GeneratedOn = DateTime.Now
+            };
+
+            // Parse contract list data (Table 0)
+            foreach (DataRow row in result.Tables[0].Rows)
+            {
+                contractListData.Contracts.Add(new ContractSummaryInfo
+                {
+                    ContractID = Convert.ToInt64(row["ContractID"]),
+                    ContractNo = row["ContractNo"]?.ToString() ?? "",
+                    ContractStatus = row["ContractStatus"]?.ToString() ?? "",
+                    CustomerID = Convert.ToInt64(row["CustomerID"]),
+                    CustomerName = row["CustomerName"]?.ToString() ?? "",
+                    JointCustomerID = row["JointCustomerID"] != DBNull.Value ? Convert.ToInt64(row["JointCustomerID"]) : null,
+                    JointCustomerName = row["JointCustomerName"]?.ToString() ?? "",
+                    TransactionDate = Convert.ToDateTime(row["TransactionDate"]),
+                    TotalAmount = Convert.ToDecimal(row["TotalAmount"]),
+                    AdditionalCharges = Convert.ToDecimal(row["AdditionalCharges"]),
+                    GrandTotal = Convert.ToDecimal(row["GrandTotal"]),
+                    Remarks = row["Remarks"]?.ToString() ?? "",
+                    UnitCount = row["UnitCount"] != DBNull.Value ? Convert.ToInt32(row["UnitCount"]) : 0,
+                    //ChargeCount = row["ChargeCount"] != DBNull.Value ? Convert.ToInt32(row["ChargeCount"]) : 0,
+                    //AttachmentCount = row["AttachmentCount"] != DBNull.Value ? Convert.ToInt32(row["AttachmentCount"]) : 0,
+                    //CreatedBy = row["CreatedBy"]?.ToString() ?? "",
+                    //CreatedOn = Convert.ToDateTime(row["CreatedOn"]),
+                    //UpdatedBy = row["UpdatedBy"]?.ToString() ?? "",
+                    //UpdatedOn = row["UpdatedOn"] != DBNull.Value ? Convert.ToDateTime(row["UpdatedOn"]) : null
+                });
+            }
+
+            // Calculate summary
+            contractListData.Summary = CalculateSummary(contractListData.Contracts);
+
+            // Set applied filters
+            contractListData.AppliedFilters = new ContractListFilters
+            {
+                SearchText = request.SearchText,
+                ContractStatus = request.FilterContractStatus,
+                FromDate = request.FilterFromDate,
+                ToDate = request.FilterToDate
+            };
+
+            // Get company information
+            contractListData.Company = await GetCompanyInfoAsync();
+
+            return contractListData;
+        }
+
+        private bool HasFilters(ContractListRequest request)
+        {
+            return !string.IsNullOrEmpty(request.SearchText) ||
+                   request.FilterCustomerID.HasValue ||
+                   !string.IsNullOrEmpty(request.FilterContractStatus) ||
+                   request.FilterFromDate.HasValue ||
+                   request.FilterToDate.HasValue ||
+                   request.FilterUnitID.HasValue ||
+                   request.FilterPropertyID.HasValue;
+        }
+
+        private ContractListSummary CalculateSummary(List<ContractSummaryInfo> contracts)
+        {
+            var summary = new ContractListSummary
+            {
+                TotalContracts = contracts.Count,
+                TotalContractValue = contracts.Sum(c => c.TotalAmount),
+                TotalAdditionalCharges = contracts.Sum(c => c.AdditionalCharges),
+                GrandTotalValue = contracts.Sum(c => c.GrandTotal),
+                TotalUnits = contracts.Sum(c => c.UnitCount),
+                TotalCharges = contracts.Sum(c => c.ChargeCount),
+                TotalAttachments = contracts.Sum(c => c.AttachmentCount)
+            };
+
+            // Calculate status breakdown
+            summary.StatusBreakdown = contracts
+                .GroupBy(c => c.ContractStatus)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            return summary;
+        }
+
+        private IDocument CreateContractListDocument(ContractListData data)
+        {
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4.Landscape()); // Use landscape for better table layout
+                    page.Margin(1.5f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily(Fonts.Arial));
+
+                    page.Header()
+                        .Height(140)
+                        .Background(Colors.Grey.Lighten3)
+                        .Padding(15)
+                        .Column(column =>
+                        {
+                            // Company Header Row
+                            column.Item().Row(row =>
+                            {
+                                row.RelativeItem().Column(col =>
+                                {
+                                    col.Item().Text(data.Company.CompanyName)
+                                        .FontSize(18)
+                                        .SemiBold()
+                                        .FontColor(Colors.Blue.Darken2);
+
+                                    col.Item().Text(data.Company.CompanyAddress).FontSize(8);
+                                    col.Item().Text($"Phone: {data.Company.CompanyPhone} | Email: {data.Company.CompanyEmail}").FontSize(8);
+                                });
+
+                                // Company Logo
+                                row.ConstantItem(80).AlignCenter().AlignMiddle().Container().Row(logoRow =>
+                                {
+                                    if (LogoFileExists())
+                                    {
+                                        try
+                                        {
+                                            var logoPath = GetAbsoluteLogoPath();
+                                            logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                                .MaxHeight(60)
+                                                .MaxWidth(75)
+                                                .Image(logoPath)
+                                                .FitArea();
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogWarning(ex, "Failed to load company logo");
+                                            logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                                .Border(1).BorderColor(Colors.Grey.Medium)
+                                                .Background(Colors.Grey.Lighten4)
+                                                .Padding(6).Text("LOGO").FontSize(8);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        logoRow.RelativeItem().AlignCenter().AlignMiddle()
+                                            .Border(1).BorderColor(Colors.Grey.Medium)
+                                            .Background(Colors.Grey.Lighten4)
+                                            .Padding(6).Text("LOGO").FontSize(8);
+                                    }
+                                });
+                            });
+
+                            column.Item().PaddingVertical(5);
+
+                            // Report Title
+                            column.Item().AlignCenter().Text(data.ReportTitle)
+                                .FontSize(16)
+                                .SemiBold()
+                                .FontColor(Colors.Blue.Darken2);
+
+                            // Generation Info
+                            column.Item().PaddingTop(5).Row(row =>
+                            {
+                                row.RelativeItem().Text($"Generated by: {data.GeneratedBy}").FontSize(8);
+                                row.RelativeItem().AlignRight().Text($"Generated on: {data.GeneratedOn:dd/MM/yyyy HH:mm}").FontSize(8);
+                            });
+
+                            // Applied Filters
+                            if (HasAppliedFilters(data.AppliedFilters))
+                            {
+                                column.Item().PaddingTop(5).Background(Colors.Blue.Lighten4).Padding(5).Column(filterCol =>
+                                {
+                                    filterCol.Item().Text("Applied Filters:").FontSize(8).SemiBold();
+
+                                    var filterTexts = new List<string>();
+
+                                    if (!string.IsNullOrEmpty(data.AppliedFilters.SearchText))
+                                        filterTexts.Add($"Search: {data.AppliedFilters.SearchText}");
+
+                                    if (!string.IsNullOrEmpty(data.AppliedFilters.ContractStatus))
+                                        filterTexts.Add($"Status: {data.AppliedFilters.ContractStatus}");
+
+                                    if (data.AppliedFilters.FromDate.HasValue)
+                                        filterTexts.Add($"From: {data.AppliedFilters.FromDate:dd/MM/yyyy}");
+
+                                    if (data.AppliedFilters.ToDate.HasValue)
+                                        filterTexts.Add($"To: {data.AppliedFilters.ToDate:dd/MM/yyyy}");
+
+                                    if (filterTexts.Any())
+                                    {
+                                        filterCol.Item().Text(string.Join(" | ", filterTexts)).FontSize(8);
+                                    }
+                                });
+                            }
+                        });
+
+                    page.Content()
+                        .PaddingVertical(10)
+                        .Column(column =>
+                        {
+                            // Summary Section
+                            column.Item().Background(Colors.Grey.Lighten4).Padding(10).Row(row =>
+                            {
+                                row.RelativeItem().Column(col =>
+                                {
+                                    col.Item().Text("SUMMARY").FontSize(11).SemiBold();
+                                    col.Item().Row(r =>
+                                    {
+                                        r.RelativeItem().Text($"Total Contracts: {data.Summary.TotalContracts}");
+                                        r.RelativeItem().Text($"Total Units: {data.Summary.TotalUnits}");
+                                        r.RelativeItem().Text($"Total Value: {data.Summary.GrandTotalValue:N2}");
+                                    });
+                                });
+
+                                row.RelativeItem().Column(col =>
+                                {
+                                    col.Item().Text("STATUS BREAKDOWN").FontSize(11).SemiBold();
+                                    foreach (var status in data.Summary.StatusBreakdown)
+                                    {
+                                        col.Item().Text($"{status.Key}: {status.Value}").FontSize(9);
+                                    }
+                                });
+                            });
+
+                            column.Item().PaddingVertical(10);
+
+                            // Contracts Table
+                            if (data.Contracts.Any())
+                            {
+                                column.Item().Table(table =>
+                                {
+                                    table.ColumnsDefinition(columns =>
+                                    {
+                                        columns.ConstantColumn(80);  // Contract No
+                                        columns.RelativeColumn(2);  // Customer Name
+                                        columns.ConstantColumn(60);  // Status
+                                        columns.ConstantColumn(70);  // Date
+                                        columns.ConstantColumn(70);  // Total Amount
+                                        columns.ConstantColumn(70);  // Additional Charges
+                                        columns.ConstantColumn(70);  // Grand Total
+                                        columns.ConstantColumn(35);  // Units
+                                        columns.ConstantColumn(35);  // Charges
+                                        columns.RelativeColumn(1);  // Created By
+                                    });
+
+                                    // Header
+                                    table.Header(header =>
+                                    {
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Contract No").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Customer Name").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Status").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Date").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Total Amt").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Add. Charges").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Grand Total").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Units").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Charges").FontColor(Colors.White).SemiBold().FontSize(8);
+                                        header.Cell().Background(Colors.Blue.Darken2).Padding(3).Text("Created By").FontColor(Colors.White).SemiBold().FontSize(8);
+                                    });
+
+                                    // Data rows
+                                    foreach (var contract in data.Contracts)
+                                    {
+                                        table.Cell().BorderBottom(0.5f).Padding(3).Text(contract.ContractNo).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).Text(contract.CustomerName).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).Text(contract.ContractStatus).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).Text(contract.TransactionDate.ToString("dd/MM/yyyy")).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).AlignRight().Text(contract.TotalAmount.ToString("N0")).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).AlignRight().Text(contract.AdditionalCharges.ToString("N0")).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).AlignRight().Text(contract.GrandTotal.ToString("N0")).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).AlignCenter().Text(contract.UnitCount.ToString()).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).AlignCenter().Text(contract.ChargeCount.ToString()).FontSize(8);
+                                        table.Cell().BorderBottom(0.5f).Padding(3).Text(contract.CreatedBy).FontSize(8);
+                                    }
+
+                                    // Total row
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).Text("TOTALS").SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).Text($"{data.Summary.TotalContracts} Contracts").SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).AlignRight().Text(data.Summary.TotalContractValue.ToString("N0")).SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).AlignRight().Text(data.Summary.TotalAdditionalCharges.ToString("N0")).SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).AlignRight().Text(data.Summary.GrandTotalValue.ToString("N0")).SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).AlignCenter().Text(data.Summary.TotalUnits.ToString()).SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3).AlignCenter().Text(data.Summary.TotalCharges.ToString()).SemiBold().FontSize(8);
+                                    table.Cell().Background(Colors.Grey.Lighten2).Padding(3);
+                                });
+                            }
+                            else
+                            {
+                                column.Item().AlignCenter().Padding(20).Text("No contracts found matching the specified criteria.")
+                                    .FontSize(12).FontColor(Colors.Grey.Darken1);
+                            }
+                        });
+
+                    page.Footer()
+                        .Height(30)
+                        .Background(Colors.Grey.Lighten4)
+                        .AlignCenter()
+                        .Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" of ");
+                            x.TotalPages();
+                            x.Span($" | {data.ReportTitle} | Generated: {data.GeneratedOn:dd/MM/yyyy HH:mm}");
+                        });//FontSize(8)
+                });
+            });
+        }
+
+        private bool HasAppliedFilters(ContractListFilters filters)
+        {
+            return !string.IsNullOrEmpty(filters.SearchText) ||
+                   !string.IsNullOrEmpty(filters.ContractStatus) ||
+                   filters.FromDate.HasValue ||
+                   filters.ToDate.HasValue;
         }
 
         private async Task<ContractSlipData> GetContractDataAsync(long contractId, string actionBy)
