@@ -3,6 +3,7 @@ using LeaseERP.Core.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using QuestPDF.Infrastructure;
 using System.Data;
 
 namespace LeaseERP.Infrastructure
@@ -11,6 +12,9 @@ namespace LeaseERP.Infrastructure
     {
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
+            // Configure QuestPDF license - Community license is free for open-source and personal projects
+            QuestPDF.Settings.License = LicenseType.Community;
+
             services.AddScoped<IDbConnection>(sp =>
             {
                 var connection = new SqlConnection(configuration.GetConnectionString("DefaultConnection"));
@@ -21,6 +25,7 @@ namespace LeaseERP.Infrastructure
             services.AddScoped<IDataService, DataService>();
             services.AddSingleton<IEncryptionService, EncryptionService>();
             services.AddScoped<IAuthenticationService, AuthenticationService>();
+            services.AddScoped<IPdfService, PdfService>();
 
             return services;
         }
