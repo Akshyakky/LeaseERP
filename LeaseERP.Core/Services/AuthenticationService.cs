@@ -3,9 +3,9 @@ using LeaseERP.Shared.DTOs;
 using LeaseERP.Shared.Enums;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using System.Data;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace LeaseERP.Core.Services
@@ -47,7 +47,7 @@ namespace LeaseERP.Core.Services
                 var result = await _dataService.ExecuteStoredProcedureAsync(_spUser, parameters);
 
                 // Check for successful login
-                var statusTable = result.Tables.Count > 1 ? result.Tables[1] : result.Tables[0];
+                var statusTable = result.Tables.Count > 3 ? result.Tables[3] : result.Tables[0];
                 if (statusTable.Rows.Count > 0 && Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1)
                 {
                     // User data should be in the first table
@@ -57,13 +57,13 @@ namespace LeaseERP.Core.Services
                         var user = new UserDTO
                         {
                             UserID = Convert.ToInt64(userTable.Rows[0]["UserID"]),
-                            CompID = Convert.ToInt64(userTable.Rows[0]["CompID"]),
+                            CompID = Convert.ToInt64(userTable.Rows[0]["DefaultCompanyID"]),
                             UserName = userTable.Rows[0]["UserName"].ToString(),
                             UserFullName = userTable.Rows[0]["UserFullName"].ToString(),
                             PhoneNo = userTable.Rows[0]["PhoneNo"]?.ToString() ?? string.Empty,
                             EmailID = userTable.Rows[0]["EmailID"]?.ToString() ?? string.Empty,
                             IsActive = Convert.ToBoolean(userTable.Rows[0]["IsActive"]),
-                            CompanyName = userTable.Rows[0]["CompanyName"]?.ToString() ?? string.Empty
+                            CompanyName = userTable.Rows[0]["DefaultCompanyName"]?.ToString() ?? string.Empty
                         };
 
                         // Handle nullable fields
@@ -86,6 +86,22 @@ namespace LeaseERP.Core.Services
                         int expiryHours = int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8");
                         DateTime expiration = DateTime.UtcNow.AddHours(expiryHours);
 
+                        // Get all companies from the second table returned by the stored procedure
+                        var companies = new List<CompanyDTO>();
+                        if (result.Tables.Count > 1)
+                        {
+                            var companiesTable = result.Tables[1];
+                            foreach (DataRow row in companiesTable.Rows)
+                            {
+                                companies.Add(new CompanyDTO
+                                {
+                                    CompanyID = Convert.ToInt64(row["CompanyID"]),
+                                    CompanyName = row["CompanyName"].ToString(),
+                                    IsDefault = Convert.ToBoolean(row["IsDefault"])
+                                });
+                            }
+                        }
+
                         return new LoginResponse
                         {
                             Success = true,
@@ -93,7 +109,8 @@ namespace LeaseERP.Core.Services
                             Token = token,
                             RefreshToken = refreshToken,
                             Expiration = expiration,
-                            User = user
+                            User = user,
+                            Companies = companies
                         };
                     }
                 }
@@ -180,7 +197,7 @@ namespace LeaseERP.Core.Services
                 var result = await _dataService.ExecuteStoredProcedureAsync(_spUser, parameters);
 
                 // Check if user was found
-                var statusTable = result.Tables[1]; // Status is in the second table for FetchById
+                var statusTable = result.Tables[2]; // Status is in the second table for FetchById
                 if (statusTable.Rows.Count > 0 && Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1)
                 {
                     var userTable = result.Tables[0];
@@ -189,13 +206,13 @@ namespace LeaseERP.Core.Services
                         var user = new UserDTO
                         {
                             UserID = Convert.ToInt64(userTable.Rows[0]["UserID"]),
-                            CompID = Convert.ToInt64(userTable.Rows[0]["CompID"]),
+                            CompID = Convert.ToInt64(userTable.Rows[0]["DefaultCompanyID"]),
                             UserName = userTable.Rows[0]["UserName"].ToString(),
                             UserFullName = userTable.Rows[0]["UserFullName"].ToString(),
                             PhoneNo = userTable.Rows[0]["PhoneNo"]?.ToString() ?? string.Empty,
                             EmailID = userTable.Rows[0]["EmailID"]?.ToString() ?? string.Empty,
                             IsActive = Convert.ToBoolean(userTable.Rows[0]["IsActive"]),
-                            CompanyName = userTable.Rows[0]["CompanyName"]?.ToString() ?? string.Empty
+                            CompanyName = userTable.Rows[0]["DefaultCompanyName"]?.ToString() ?? string.Empty
                         };
 
                         // Handle nullable fields
@@ -228,6 +245,22 @@ namespace LeaseERP.Core.Services
                         int expiryHours = int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8");
                         DateTime expiration = DateTime.UtcNow.AddHours(expiryHours);
 
+                        // Get all companies from the second table returned by the stored procedure
+                        var companies = new List<CompanyDTO>();
+                        if (result.Tables.Count > 1)
+                        {
+                            var companiesTable = result.Tables[1];
+                            foreach (DataRow row in companiesTable.Rows)
+                            {
+                                companies.Add(new CompanyDTO
+                                {
+                                    CompanyID = Convert.ToInt64(row["CompanyID"]),
+                                    CompanyName = row["CompanyName"].ToString(),
+                                    IsDefault = Convert.ToBoolean(row["IsDefault"])
+                                });
+                            }
+                        }
+
                         return new LoginResponse
                         {
                             Success = true,
@@ -235,7 +268,8 @@ namespace LeaseERP.Core.Services
                             Token = token,
                             RefreshToken = refreshToken,
                             Expiration = expiration,
-                            User = user
+                            User = user,
+                            Companies = companies
                         };
                     }
                 }
@@ -411,6 +445,133 @@ namespace LeaseERP.Core.Services
 
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
+        }
+        public async Task<LoginResponse> SwitchCompanyAsync(SwitchCompanyRequest request)
+        {
+            try
+            {
+                // Verify the user exists and can access the company
+                var parameters = new Dictionary<string, object>
+                {
+                    { "@Mode", (int)OperationType.FetchById },
+                    { "@UserID", request.UserID }
+                };
+
+                var result = await _dataService.ExecuteStoredProcedureAsync(_spUser, parameters);
+
+                // Check if user was found
+                var statusTable = result.Tables[2]; // Status is in the third table for FetchById
+                if (statusTable.Rows.Count > 0 && Convert.ToInt32(statusTable.Rows[0]["Status"]) == 1)
+                {
+                    var userTable = result.Tables[0];
+                    if (userTable.Rows.Count > 0)
+                    {
+                        // Check if user has access to the requested company
+                        var companiesTable = result.Tables[1];
+                        bool hasAccess = false;
+                        string companyName = string.Empty;
+
+                        foreach (DataRow row in companiesTable.Rows)
+                        {
+                            if (Convert.ToInt64(row["CompanyID"]) == request.CompanyID)
+                            {
+                                hasAccess = true;
+                                companyName = row["CompanyName"].ToString();
+                                break;
+                            }
+                        }
+
+                        if (!hasAccess)
+                        {
+                            return new LoginResponse
+                            {
+                                Success = false,
+                                Message = "User does not have access to the requested company"
+                            };
+                        }
+
+                        // Create user model with the new company as default
+                        var user = new UserDTO
+                        {
+                            UserID = Convert.ToInt64(userTable.Rows[0]["UserID"]),
+                            CompID = request.CompanyID, // Use the requested company as current
+                            UserName = userTable.Rows[0]["UserName"].ToString(),
+                            UserFullName = userTable.Rows[0]["UserFullName"].ToString(),
+                            PhoneNo = userTable.Rows[0]["PhoneNo"]?.ToString() ?? string.Empty,
+                            EmailID = userTable.Rows[0]["EmailID"]?.ToString() ?? string.Empty,
+                            IsActive = Convert.ToBoolean(userTable.Rows[0]["IsActive"]),
+                            CompanyName = companyName // Use the name from the lookup
+                        };
+
+                        // Handle nullable fields
+                        if (userTable.Rows[0]["DepartmentID"] != DBNull.Value)
+                            user.DepartmentID = Convert.ToInt64(userTable.Rows[0]["DepartmentID"]);
+
+                        if (userTable.Rows[0]["RoleID"] != DBNull.Value)
+                            user.RoleID = Convert.ToInt64(userTable.Rows[0]["RoleID"]);
+
+                        user.DepartmentName = userTable.Rows[0]["DepartmentName"]?.ToString() ?? string.Empty;
+                        user.RoleName = userTable.Rows[0]["RoleName"]?.ToString() ?? string.Empty;
+
+                        // Check if user is still active
+                        if (!user.IsActive)
+                        {
+                            return new LoginResponse
+                            {
+                                Success = false,
+                                Message = "User account is inactive"
+                            };
+                        }
+
+                        // Generate new JWT token with the updated company
+                        string token = GenerateJwtToken(user);
+
+                        // Generate new refresh token
+                        string refreshToken = GenerateRefreshToken(user);
+
+                        // Calculate expiration
+                        int expiryHours = int.Parse(_configuration["JwtSettings:ExpiryHours"] ?? "8");
+                        DateTime expiration = DateTime.UtcNow.AddHours(expiryHours);
+
+                        // Get all companies for the user
+                        var companies = new List<CompanyDTO>();
+                        foreach (DataRow row in companiesTable.Rows)
+                        {
+                            companies.Add(new CompanyDTO
+                            {
+                                CompanyID = Convert.ToInt64(row["CompanyID"]),
+                                CompanyName = row["CompanyName"].ToString(),
+                                IsDefault = Convert.ToInt64(row["CompanyID"]) == request.CompanyID // Mark the requested company as default
+                            });
+                        }
+
+                        return new LoginResponse
+                        {
+                            Success = true,
+                            Message = "Company switched successfully",
+                            Token = token,
+                            RefreshToken = refreshToken,
+                            Expiration = expiration,
+                            User = user,
+                            Companies = companies
+                        };
+                    }
+                }
+
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = "User not found or inactive"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new LoginResponse
+                {
+                    Success = false,
+                    Message = $"Company switch error: {ex.Message}"
+                };
+            }
         }
     }
 }

@@ -9,5 +9,6 @@ namespace LeaseERP.Core.Interfaces
         Task<bool> ChangePasswordAsync(ChangePasswordRequest request);
         Task<bool> ResetPasswordAsync(ResetPasswordRequest request);
         string GenerateJwtToken(UserDTO user);
+        Task<LoginResponse> SwitchCompanyAsync(SwitchCompanyRequest request);
     }
 }

@@ -124,5 +124,37 @@ namespace LeaseERP.API.Controllers
                 return StatusCode(500, new { Success = false, Message = "An error occurred while processing your request." });
             }
         }
+        [HttpPost("switch-company")]
+        [Authorize]
+        public async Task<ActionResult<LoginResponse>> SwitchCompany([FromBody] SwitchCompanyRequest request)
+        {
+            try
+            {
+                var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (userId == null || Convert.ToInt64(userId) != request.UserID)
+                {
+                    return Forbid();
+                }
+
+                var result = await _authService.SwitchCompanyAsync(request);
+                if (result.Success)
+                {
+                    _logger.LogInformation("User {UserID} switched to company {CompanyID}.", request.UserID, request.CompanyID);
+                    return Ok(result);
+                }
+
+                _logger.LogWarning("Failed company switch attempt for user {UserID}.", request.UserID);
+                return BadRequest(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error switching company for user {UserID}.", request.UserID);
+                return StatusCode(500, new LoginResponse
+                {
+                    Success = false,
+                    Message = "An error occurred while switching company."
+                });
+            }
+        }
     }
 }

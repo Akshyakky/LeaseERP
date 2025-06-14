@@ -14,6 +14,20 @@
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime Expiration { get; set; }
         public UserDTO? User { get; set; }
+        public List<CompanyDTO> Companies { get; set; } = new List<CompanyDTO>();
+    }
+
+    public class CompanyDTO
+    {
+        public long CompanyID { get; set; }
+        public string CompanyName { get; set; }
+        public bool IsDefault { get; set; }
+    }
+
+    public class SwitchCompanyRequest
+    {
+        public long UserID { get; set; }
+        public long CompanyID { get; set; }
     }
 
     public class UserDTO
