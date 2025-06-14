@@ -1,4 +1,4 @@
-﻿// LeaseERP.Infrastructure/DependencyInjection.cs (Updated)
+﻿// LeaseERP.Infrastructure/DependencyInjection.cs
 using LeaseERP.Core.Interfaces;
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services;
@@ -39,21 +39,26 @@ namespace LeaseERP.Infrastructure
             services.AddScoped<IReportFactory, ReportFactory>();
             services.AddScoped<IPdfService, PdfService>();
 
-            // Report templates
+            // Generic data provider factory (handles most reports automatically)
+            services.AddScoped<GenericReportDataProviderFactory>();
+
+            // Generic template for simple reports
+            services.AddTransient<GenericReportTemplate>();
+
+            // Custom templates (only for complex reports that need special formatting)
             services.AddScoped<ContractSlipTemplate>();
             services.AddScoped<ContractListTemplate>();
             services.AddScoped<TerminationSlipTemplate>();
-            // Add more templates as needed:
-            // services.AddScoped<InvoiceSlipTemplate>();
-            // services.AddScoped<ReceiptSlipTemplate>();
 
-            // Report data providers
-            services.AddScoped<ContractSlipDataProvider>();
-            services.AddScoped<ContractListDataProvider>();
-            services.AddScoped<TerminationSlipDataProvider>();
-            // Add more data providers as needed:
-            // services.AddScoped<InvoiceSlipDataProvider>();
-            // services.AddScoped<ReceiptSlipDataProvider>();
+            // Add more custom templates only when needed:
+            // services.AddScoped<ComplexFinancialDashboardTemplate>();
+            // services.AddScoped<DetailedContractAnalysisTemplate>();
+
+            // Custom data providers (only for reports with complex business logic)
+            // Most reports will use the GenericReportDataProvider automatically
+            // Only add custom ones when you need special parameter handling or business logic:
+            // services.AddScoped<ComplexContractAnalysisDataProvider>();
+            // services.AddScoped<FinancialDashboardDataProvider>();
 
             // Report components (headers, footers, etc.)
             services.AddScoped<IReportComponent, StandardHeaderComponent>();
