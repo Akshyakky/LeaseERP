@@ -5,6 +5,7 @@ using LeaseERP.Core.Services.Reports;
 using LeaseERP.Shared.Enums;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace LeaseERP.Core.Services.Reports.Contracts
 {
@@ -26,12 +27,23 @@ namespace LeaseERP.Core.Services.Reports.Contracts
         public override Dictionary<string, object> BuildParameters(ReportRequest request)
         {
             var parameters = GetBaseParameters(request);
-
             parameters.Add("@Mode", (int)OperationType.FetchById);
 
             if (request.Parameters.TryGetValue("ContractId", out var contractId))
             {
-                parameters.Add("@ContractID", Convert.ToInt64(contractId));
+                try
+                {
+                    var contractIdValue = contractId is JsonElement jsonElement
+                        ? jsonElement.GetInt64()
+                        : Convert.ToInt64(contractId);
+
+                    parameters.Add("@ContractID", contractIdValue);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to convert ContractId parameter to Int64");
+                    throw new ArgumentException("Invalid ContractId parameter format", nameof(request));
+                }
             }
 
             return parameters;

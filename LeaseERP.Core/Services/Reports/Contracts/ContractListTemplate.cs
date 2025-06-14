@@ -147,7 +147,7 @@ namespace LeaseERP.Core.Services.Reports.Contracts
                     new() { Header = "Total Amt", PropertyName = "TotalAmount", Width = 2, Alignment = TextAlignment.Right, RenderCell = (c, item, cfg) => c.AlignRight().Text(item.TotalAmount.ToString("N2")).FontSize(8) },
                     new() { Header = "Add'l Charges", PropertyName = "AdditionalCharges", Width = 2, Alignment = TextAlignment.Right, RenderCell = (c, item, cfg) => c.AlignRight().Text(item.AdditionalCharges.ToString("N2")).FontSize(8) },
                     new() { Header = "Grand Total", PropertyName = "GrandTotal", Width = 2, Alignment = TextAlignment.Right, RenderCell = (c, item, cfg) => c.AlignRight().Text(item.GrandTotal.ToString("N2")).FontSize(8) },
-                    new() { Header = "Created By", PropertyName = "CreatedBy", Width = 2, RenderCell = (c, item, cfg) => c.Text(item.CreatedBy).FontSize(8) }
+                    //new() { Header = "Created By", PropertyName = "CreatedBy", Width = 2, RenderCell = (c, item, cfg) => c.Text(item.CreatedBy).FontSize(8) }
                 },
                 ShowTotals = true,
                 TotalCalculators = new Dictionary<string, Func<IEnumerable<ContractSummaryInfo>, string>>
@@ -227,12 +227,12 @@ namespace LeaseERP.Core.Services.Reports.Contracts
                         GrandTotal = Convert.ToDecimal(row["GrandTotal"]),
                         Remarks = row["Remarks"]?.ToString() ?? "",
                         UnitCount = row.Table.Columns.Contains("UnitCount") ? Convert.ToInt32(row["UnitCount"]) : 0,
-                        ChargeCount = row.Table.Columns.Contains("ChargeCount") ? Convert.ToInt32(row["ChargeCount"]) : 0,
-                        AttachmentCount = row.Table.Columns.Contains("AttachmentCount") ? Convert.ToInt32(row["AttachmentCount"]) : 0,
-                        CreatedBy = row["CreatedBy"]?.ToString() ?? "",
-                        CreatedOn = Convert.ToDateTime(row["CreatedOn"]),
-                        UpdatedBy = row["UpdatedBy"]?.ToString() ?? "",
-                        UpdatedOn = row["UpdatedOn"] != DBNull.Value ? Convert.ToDateTime(row["UpdatedOn"]) : null
+                        //ChargeCount = row.Table.Columns.Contains("ChargeCount") ? Convert.ToInt32(row["ChargeCount"]) : 0,
+                        //AttachmentCount = row.Table.Columns.Contains("AttachmentCount") ? Convert.ToInt32(row["AttachmentCount"]) : 0,
+                        //CreatedBy = row["CreatedBy"]?.ToString() ?? "",
+                        //CreatedOn = Convert.ToDateTime(row["CreatedOn"]),
+                        //UpdatedBy = row["UpdatedBy"]?.ToString() ?? "",
+                        //UpdatedOn = row["UpdatedOn"] != DBNull.Value ? Convert.ToDateTime(row["UpdatedOn"]) : null
                     });
                 }
 

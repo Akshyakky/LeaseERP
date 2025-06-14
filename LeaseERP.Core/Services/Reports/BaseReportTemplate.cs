@@ -1,4 +1,4 @@
-﻿// LeaseERP.Core/Services/Reports/BaseReportTemplate.cs
+﻿// LeaseERP.Core/Services/Reports/BaseReportTemplate.cs 
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Shared.DTOs;
 using Microsoft.Extensions.Configuration;
@@ -273,20 +273,30 @@ namespace LeaseERP.Core.Services.Reports
                     }
                 });
 
-                // Data rows
+                // Data rows - FIXED: Use proper method chaining without variable reassignment
                 bool isAlternate = false;
                 foreach (var item in data)
                 {
                     foreach (var column in tableConfig.Columns)
                     {
+                        // Build the complete chain without intermediate variable assignments
                         var cell = table.Cell();
 
                         if (tableConfig.AlternateRowColors && isAlternate)
-                            cell.Background(Colors.Grey.Lighten5);
-
-                        cell.BorderBottom(tableConfig.BorderWidth)
-                            .Padding(3)
-                            .Element(c => column.RenderCell(c, item, tableConfig));
+                        {
+                            cell.Background(Colors.Grey.Lighten5)
+                                .BorderBottom(tableConfig.BorderWidth)
+                                .BorderColor(ParseColor(tableConfig.BorderColor ?? "#e5e7eb"))
+                                .Padding(3)
+                                .Element(c => column.RenderCell(c, item, tableConfig));
+                        }
+                        else
+                        {
+                            cell.BorderBottom(tableConfig.BorderWidth)
+                                .BorderColor(ParseColor(tableConfig.BorderColor ?? "#e5e7eb"))
+                                .Padding(3)
+                                .Element(c => column.RenderCell(c, item, tableConfig));
+                        }
                     }
                     isAlternate = !isAlternate;
                 }
@@ -303,28 +313,35 @@ namespace LeaseERP.Core.Services.Reports
         {
             foreach (var column in tableConfig.Columns)
             {
-                var cell = table.Cell().Background(Colors.Grey.Lighten2).Padding(3);
+                var cellContainer = table.Cell()
+                    .Background(Colors.Grey.Lighten2)
+                    .Padding(3);
 
                 if (tableConfig.TotalCalculators.TryGetValue(column.PropertyName, out var calculator))
                 {
                     var totalValue = calculator(data);
-                    cell.AlignRight().Text(totalValue).SemiBold().FontSize(8);
+                    cellContainer.AlignRight().Text(totalValue).SemiBold().FontSize(8);
                 }
                 else if (column == tableConfig.Columns.First())
                 {
-                    cell.Text("TOTALS").SemiBold().FontSize(8);
+                    cellContainer.Text("TOTALS").SemiBold().FontSize(8);
+                }
+                else
+                {
+                    cellContainer.Text("");
                 }
             }
         }
     }
 
-    // Table configuration classes
+    // Table configuration classes remain the same
     public class TableConfiguration<T>
     {
         public List<TableColumn<T>> Columns { get; set; } = new();
         public string HeaderBackgroundColor { get; set; } = "#1e40af";
         public int HeaderFontSize { get; set; } = 9;
         public float BorderWidth { get; set; } = 0.5f;
+        public string BorderColor { get; set; } = "#e5e7eb";
         public bool AlternateRowColors { get; set; } = true;
         public bool ShowTotals { get; set; } = false;
         public Dictionary<string, Func<IEnumerable<T>, string>> TotalCalculators { get; set; } = new();
@@ -342,7 +359,6 @@ namespace LeaseERP.Core.Services.Reports
 
         public static void DefaultCellRenderer(IContainer container, T item, TableConfiguration<T> config)
         {
-            // Default implementation - would need reflection or expression trees for property access
             container.Text(item?.ToString() ?? "");
         }
     }
