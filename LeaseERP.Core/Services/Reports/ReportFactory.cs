@@ -2,6 +2,7 @@
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services.Reports.Contracts;
 using LeaseERP.Core.Services.Reports.Invoices;
+using LeaseERP.Core.Services.Reports.PettyCash;
 using LeaseERP.Core.Services.Reports.Receipts;
 using LeaseERP.Core.Services.Reports.Termination;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +38,9 @@ namespace LeaseERP.Core.Services.Reports
             "invoice-slip",
             "invoice-list",
             "receipt-slip",
-            "receipt-list"
+            "receipt-list",
+            "petty-cash-slip",
+            "pettycash-slip"
             // Add more as needed
         };
 
@@ -67,6 +70,7 @@ namespace LeaseERP.Core.Services.Reports
                         "invoice-list" => _serviceProvider.GetRequiredService<InvoiceListTemplate>(),
                         "receipt-slip" => _serviceProvider.GetRequiredService<ReceiptSlipTemplate>(),
                         "receipt-list" => _serviceProvider.GetRequiredService<ReceiptListTemplate>(),
+                        "petty-cash-slip" or "pettycash-slip" => _serviceProvider.GetRequiredService<PettyCashSlipTemplate>(),
                         _ => null
                     };
                 }
@@ -124,6 +128,7 @@ namespace LeaseERP.Core.Services.Reports
                 "invoice-list",
                 "receipt-slip",
                 "receipt-list",
+                "petty-cash-slip",
                 "customer-list",
                 "property-list",
                 "unit-list",

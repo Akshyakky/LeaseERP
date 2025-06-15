@@ -111,6 +111,8 @@ namespace LeaseERP.Core.Services.Reports
                 "invoice-list" => "StoredProcedures:contractInvoiceManagement",
                 "receipt-slip" => "StoredProcedures:contractReceiptManagement",
                 "receipt-list" => "StoredProcedures:contractReceiptManagement",
+                "petty-cash-slip" => "StoredProcedures:pettyCash",
+                "pettycash-slip" => "StoredProcedures:pettyCash",
                 "customer-list" => "StoredProcedures:customer",
                 "property-list" => "StoredProcedures:property",
                 "unit-list" => "StoredProcedures:unit",
