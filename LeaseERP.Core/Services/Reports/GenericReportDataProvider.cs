@@ -116,6 +116,7 @@ namespace LeaseERP.Core.Services.Reports
                 "customer-list" => "StoredProcedures:customer",
                 "property-list" => "StoredProcedures:property",
                 "unit-list" => "StoredProcedures:unit",
+                "payment-voucher-slip" => "StoredProcedures:paymentvoucher",
                 _ => $"StoredProcedures:{reportType.Replace("-", "")}"
             };
         }
