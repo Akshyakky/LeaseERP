@@ -2,6 +2,7 @@
 using LeaseERP.Core.Interfaces.Reports;
 using LeaseERP.Core.Services.Reports.Contracts;
 using LeaseERP.Core.Services.Reports.Invoices;
+using LeaseERP.Core.Services.Reports.JournalVouchers;
 using LeaseERP.Core.Services.Reports.PaymentVouchers;
 using LeaseERP.Core.Services.Reports.PettyCash;
 using LeaseERP.Core.Services.Reports.Receipts;
@@ -42,7 +43,9 @@ namespace LeaseERP.Core.Services.Reports
             "receipt-list",
             "petty-cash-slip",
             "pettycash-slip",
-            "payment-voucher-slip"
+            "payment-voucher-slip",
+            "journal-voucher-slip",
+            "journalvoucher-slip"
             // Add more as needed
         };
 
@@ -74,6 +77,7 @@ namespace LeaseERP.Core.Services.Reports
                         "receipt-list" => _serviceProvider.GetRequiredService<ReceiptListTemplate>(),
                         "petty-cash-slip" or "pettycash-slip" => _serviceProvider.GetRequiredService<PettyCashSlipTemplate>(),
                         "payment-voucher-slip" => _serviceProvider.GetRequiredService<PaymentVoucherSlipTemplate>(),
+                        "journal-voucher-slip" or "journalvoucher-slip" => _serviceProvider.GetRequiredService<JournalVoucherSlipTemplate>(),
                         _ => null
                     };
                 }
@@ -138,8 +142,7 @@ namespace LeaseERP.Core.Services.Reports
                 "payment-voucher-slip",
                 "journal-voucher-slip",
                 "general-ledger-report",
-                "trial-balance-report",
-                "payment-voucher-slip"
+                "trial-balance-report"
             };
         }
     }

@@ -6,6 +6,7 @@ using LeaseERP.Core.Services.Reports;
 using LeaseERP.Core.Services.Reports.Components;
 using LeaseERP.Core.Services.Reports.Contracts;
 using LeaseERP.Core.Services.Reports.Invoices;
+using LeaseERP.Core.Services.Reports.JournalVouchers;
 using LeaseERP.Core.Services.Reports.PaymentVouchers;
 using LeaseERP.Core.Services.Reports.PettyCash;
 using LeaseERP.Core.Services.Reports.Receipts;
@@ -59,6 +60,7 @@ namespace LeaseERP.Infrastructure
             services.AddScoped<ReceiptListTemplate>();
             services.AddScoped<PettyCashSlipTemplate>();
             services.AddScoped<PaymentVoucherSlipTemplate>();
+            services.AddScoped<JournalVoucherSlipTemplate>();
 
             // Add more custom templates only when needed:
             // services.AddScoped<ComplexFinancialDashboardTemplate>();
