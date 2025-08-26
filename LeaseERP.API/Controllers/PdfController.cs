@@ -1,7 +1,6 @@
 ﻿// LeaseERP.API/Controllers/PdfController.cs (Updated to use generic framework)
 using LeaseERP.Core.Interfaces;
 using LeaseERP.Core.Interfaces.Reports;
-using LeaseERP.Shared.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
